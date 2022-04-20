@@ -1,4 +1,24 @@
+#![doc(html_root_url = "https://docs.rs/xpt2046")]
+#![doc(issue_tracker_base_url = "https://github.com/VersBinarii/xpt2046/issues/")]
+#![deny(
+    missing_debug_implementations,
+    trivial_casts,
+    trivial_numeric_casts,
+    unsafe_code,
+    unstable_features,
+    unused_import_braces,
+    unused_qualifications,
+    unused_variables,
+    unreachable_code,
+    unused_comparisons,
+    unused_imports,
+    unused_must_use
+)]
 #![no_std]
+
+//! A platform agnostic Rust driver for XPT2046 touch controller, based on the
+//! [`embedded-hal`](https://github.com/rust-embedded/embedded-hal) traits.
+//!
 
 use crate::{
     error::{BusError, Error},
@@ -19,6 +39,7 @@ const CHANNEL_SETTING_Y: u8 = 0b11010000;
 const MAX_SAMPLES: usize = 32;
 const TX_BUFF_LEN: usize = 5;
 
+#[derive(Debug)]
 pub struct CalibrationData {
     pub alpha_x: f32,
     pub beta_x: f32,
@@ -29,6 +50,7 @@ pub struct CalibrationData {
 }
 
 /// Orientation of the touch screen
+#[derive(Debug)]
 pub enum Orientation {
     Portrait,
     PortraitFlipped,
@@ -88,6 +110,7 @@ pub enum TouchScreenState {
     RELEASED,
 }
 
+#[derive(Debug)]
 pub enum TouchScreenOperationMode {
     /// Normal touch reading
     NORMAL,
@@ -95,6 +118,7 @@ pub enum TouchScreenOperationMode {
     CALIBRATION,
 }
 
+#[derive(Debug)]
 pub struct TouchSamples {
     /// All the touch samples
     samples: [Point; MAX_SAMPLES],
@@ -102,7 +126,7 @@ pub struct TouchSamples {
     counter: usize,
 }
 
-impl core::default::Default for TouchSamples {
+impl Default for TouchSamples {
     fn default() -> Self {
         Self {
             counter: 0,
@@ -126,6 +150,7 @@ impl TouchSamples {
     }
 }
 
+#[derive(Debug)]
 pub struct Xpt2046<SPI, CS, PinIRQ> {
     /// THe SPI interface
     spi: SPI,
@@ -170,8 +195,8 @@ where
     SPI: Transfer<u8, Error = SPIError>,
     CS: OutputPin<Error = CSError>,
     PinIRQ: Xpt2046Exti,
-    SPIError: core::fmt::Debug,
-    CSError: core::fmt::Debug,
+    SPIError: Debug,
+    CSError: Debug,
 {
     fn spi_read(&mut self) -> Result<(), Error<BusError<SPIError, CSError>>> {
         self.cs

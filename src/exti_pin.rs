@@ -1,3 +1,5 @@
+//! Exti trait definition
+
 /// Embedded-hal does not expose any generic interface for
 /// working with EXTI interrupts.
 /// This trait allows the driver to take control

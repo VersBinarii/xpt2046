@@ -1,3 +1,5 @@
+//! Error definition for the crate
+
 #[cfg(feature = "with_defmt")]
 use defmt::{write, Format, Formatter};
 
