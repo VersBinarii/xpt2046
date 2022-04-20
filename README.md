@@ -5,7 +5,8 @@
 [![Released API docs](https://docs.rs/xpt2046/badge.svg)](https://docs.rs/xpt2046)
 
 Rust Embeddd Hal based driver for xpt2046 touch screen driver
-
+## TODO
+ * Perform manual calibration of the touch controller
 
 ## License
 

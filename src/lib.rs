@@ -20,7 +20,7 @@
 //! [`embedded-hal`](https://github.com/rust-embedded/embedded-hal) traits.
 //!
 
-use crate::{
+pub use crate::{
     error::{BusError, Error},
     exti_pin::Xpt2046Exti,
 };
