@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Embedded-hal based XPT2046 driver for TFT LCD displays"
 authors = ["VersBInarii <versbinarii@gmail.com>"]
-keywords = ["embedded-hal", "embedded-hal-driver", "xpt2046", "touch", "LCD", "no_std"]
+keywords = ["embedded-hal-driver", "xpt2046", "touch", "LCD", "no_std"]
 license = "MIT OR Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
