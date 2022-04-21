@@ -294,7 +294,7 @@ where
         self.screen_state = TouchScreenState::PRESAMPLING;
     }
 
-    /// Reset the driver and preload tx buffer with register data
+    /// Reset the driver and preload tx buffer with register data.
     pub fn init<D: DelayUs>(&mut self, delay: &mut D) {
         self.tx_buff[0] = 0x80;
         self.cs.set_high().unwrap();
@@ -316,7 +316,9 @@ where
         ];
     }
 
-    /// continually runs and and collects the touch data from xpt2046
+    /// Continually runs and and collects the touch data from xpt2046.
+    /// You should drive this either in some main loop or dedicated timer
+    /// interrupt
     pub fn run(&mut self, exti: &mut PinIRQ::Exti) {
         match self.screen_state {
             TouchScreenState::IDLE => {
