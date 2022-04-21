@@ -45,7 +45,7 @@ pub mod exti_pin;
 const CHANNEL_SETTING_X: u8 = 0b10010000;
 const CHANNEL_SETTING_Y: u8 = 0b11010000;
 
-const MAX_SAMPLES: usize = 64;
+const MAX_SAMPLES: usize = 128;
 const TX_BUFF_LEN: usize = 5;
 
 #[derive(Debug)]
@@ -68,6 +68,9 @@ pub enum Orientation {
 }
 
 impl Orientation {
+    /// Default location for the test touch point
+    /// Those depend on whether the touch screen operates in
+    /// Portrait or Landscape position
     pub fn calibration_point(&self) -> CalibrationPoint {
         match self {
             Orientation::Portrait | Orientation::PortraitFlipped => CalibrationPoint {
@@ -83,6 +86,9 @@ impl Orientation {
         }
     }
 
+    /// Default calibration values used for calculating the touch points
+    /// Those depend on whether the touch screen operates in
+    /// Portrait or Landscape position
     pub fn calibration_data(&self) -> CalibrationData {
         match self {
             Orientation::Portrait => CalibrationData {
@@ -188,9 +194,12 @@ pub struct Xpt2046<SPI, CS, PinIRQ> {
     rx_buff: [u8; TX_BUFF_LEN],
     /// Current driver state
     screen_state: TouchScreenState,
+    /// Buffer for the touch data samples
     ts: TouchSamples,
     calibration_data: CalibrationData,
     operation_mode: TouchScreenOperationMode,
+    /// Location of the touch points used for
+    /// performing manual calibration
     calibration_point: CalibrationPoint,
 }
 
@@ -238,7 +247,7 @@ where
     }
 
     /// Read raw values from the XPT2046 driver
-    pub fn read_xy(&mut self) -> Result<Point, Error<BusError<SPIError, CSError>>> {
+    fn read_xy(&mut self) -> Result<Point, Error<BusError<SPIError, CSError>>> {
         self.spi_read()?;
 
         let x = (self.rx_buff[1] as i32) << 8 | self.rx_buff[2] as i32;
@@ -247,7 +256,7 @@ where
     }
 
     /// Read the calibrated point of touch from XPT2046
-    pub fn read_touch_point(&mut self) -> Result<Point, Error<BusError<SPIError, CSError>>> {
+    fn read_touch_point(&mut self) -> Result<Point, Error<BusError<SPIError, CSError>>> {
         let raw_point = self.read_xy()?;
 
         let (x, y) = match self.operation_mode {
@@ -258,12 +267,10 @@ where
                 let y = self.calibration_data.alpha_y * raw_point.x as f32
                     + self.calibration_data.beta_y * raw_point.y as f32
                     + self.calibration_data.delta_y;
-
                 (x as i32, y as i32)
             }
             TouchScreenOperationMode::CALIBRATION => {
                 /*
-                 * TODO:
                  * We're running calibration so just return raw
                  * point measurements without compensation
                  */
@@ -271,6 +278,10 @@ where
             }
         };
         Ok(Point::new(x, y))
+    }
+
+    pub fn get_touch_point(&self) -> Point {
+        self.ts.average()
     }
 
     /// Check if the display is currently touched
@@ -290,10 +301,12 @@ where
         self.spi_read().unwrap();
         delay.delay_ms(1).unwrap();
 
-        // Load the tx_buffer with the channels config
-        // for all subsequent reads
-        // The byte shifting provides padding to align the read bytes with the
-        // DCLK. XPT2046 datasheet figure 12
+        /*
+         * Load the tx_buffer with the channels config
+         * for all subsequent reads
+         * The byte shifting provides padding to align the read bytes with the
+         * DCLK. XPT2046 datasheet figure 12
+         */
         self.tx_buff = [
             CHANNEL_SETTING_X >> 3,
             CHANNEL_SETTING_X << 5,
@@ -303,7 +316,7 @@ where
         ];
     }
 
-    /// continually runs and
+    /// continually runs and and collects the touch data from xpt2046
     pub fn run(&mut self, exti: &mut PinIRQ::Exti) {
         match self.screen_state {
             TouchScreenState::IDLE => {
@@ -350,6 +363,8 @@ where
         }
     }
 
+    /// This function should be only ever be called in an EXTI
+    /// interrupt handler.
     pub fn exti_irq_handle(&mut self, exti: &mut PinIRQ::Exti) {
         /*
          * Disable the PENIRQ so that it wont be false triggering our handler
@@ -366,6 +381,11 @@ where
         self.screen_state = TouchScreenState::PRESAMPLING;
     }
 
+    /// Collects the reading for 3 sample points and
+    /// calculates a set of calibration data. The default calibration data seem
+    /// to work ok but if for some reason touch screen needs to be recalibrated
+    /// then look no further.
+    /// This should be run after init() method.
     pub fn calibrate<DT, DELAY>(&mut self, dt: &mut DT, delay: &mut DELAY, exti: &mut PinIRQ::Exti)
     where
         DT: DrawTarget<Color = Rgb565>,
@@ -388,7 +408,7 @@ where
                 0 => {
                     calibration_draw_point(dt, &old_cp.a);
                     if self.screen_state == TouchScreenState::TOUCHED {
-                        new_a = self.read_touch_point().unwrap();
+                        new_a = self.get_touch_point();
                     }
                     if self.screen_state == TouchScreenState::RELEASED {
                         let _ = delay.delay_ms(200);
@@ -399,7 +419,7 @@ where
                 1 => {
                     calibration_draw_point(dt, &old_cp.b);
                     if self.screen_state == TouchScreenState::TOUCHED {
-                        new_b = self.read_touch_point().unwrap();
+                        new_b = self.get_touch_point();
                     }
                     if self.screen_state == TouchScreenState::RELEASED {
                         let _ = delay.delay_ms(200);
@@ -409,7 +429,7 @@ where
                 2 => {
                     calibration_draw_point(dt, &old_cp.c);
                     if self.screen_state == TouchScreenState::TOUCHED {
-                        new_c = self.read_touch_point().unwrap();
+                        new_c = self.get_touch_point();
                     }
                     if self.screen_state == TouchScreenState::RELEASED {
                         let _ = delay.delay_ms(200);

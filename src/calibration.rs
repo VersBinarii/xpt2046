@@ -36,6 +36,11 @@ impl Format for CalibrationPoint {
         )
     }
 }
+
+/*
+ *  TODO:
+ *  Find a way to hide this behind a feature
+ */
 pub(crate) fn calibration_draw_point<DT: DrawTarget<Color = Rgb565>>(dt: &mut DT, p: &Point) {
     let _ = Line::new(Point::new(p.x - 4, p.y), Point::new(p.x + 4, p.y))
         .into_styled(PrimitiveStyle::with_stroke(Rgb565::WHITE, 1))
@@ -49,8 +54,14 @@ pub(crate) fn calculate_calibration(
     old_cp: &CalibrationPoint,
     new_cp: &CalibrationPoint,
 ) -> CalibrationData {
+    /*
+     * We need delta calculated from the new points
+     */
     let delta = new_cp.delta() as f32;
 
+    /*
+     * 3 point triangulation
+     */
     let alpha_x = ((old_cp.a[0] - old_cp.c[0]) * (new_cp.b[1] - new_cp.c[1])
         - (old_cp.b[0] - old_cp.c[0]) * (new_cp.a[1] - new_cp.c[1])) as f32
         / delta;
