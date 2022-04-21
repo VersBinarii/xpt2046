@@ -1,6 +1,6 @@
 [package]
 name = "xpt2046"
-version = "0.1.3"
+version = "0.2.0"
 edition = "2021"
 description = "Embedded-hal based XPT2046 driver for TFT LCD displays"
 authors = ["VersBInarii <versbinarii@gmail.com>"]
