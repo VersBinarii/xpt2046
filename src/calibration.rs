@@ -1,4 +1,5 @@
 use super::CalibrationData;
+use crate::error::CalibrationError;
 use embedded_graphics::{
     primitives::{Line, Primitive, PrimitiveStyle},
     Drawable,
@@ -53,7 +54,7 @@ pub(crate) fn calibration_draw_point<DT: DrawTarget<Color = Rgb565>>(dt: &mut DT
 pub(crate) fn calculate_calibration(
     old_cp: &CalibrationPoint,
     new_cp: &CalibrationPoint,
-) -> CalibrationData {
+) -> Result<CalibrationData, CalibrationError> {
     /*
      * We need delta calculated from the new points
      */
@@ -65,37 +66,54 @@ pub(crate) fn calculate_calibration(
     let alpha_x = ((old_cp.a[0] - old_cp.c[0]) * (new_cp.b[1] - new_cp.c[1])
         - (old_cp.b[0] - old_cp.c[0]) * (new_cp.a[1] - new_cp.c[1])) as f32
         / delta;
-
+    /*
+     * We might end up reading garabge from SPI
+     * so we must test for the weird floats
+     */
+    if !alpha_x.is_normal() {
+        return Err(CalibrationError::Alpha);
+    }
     let beta_x = ((new_cp.a[0] - new_cp.c[0]) * (old_cp.b[0] - old_cp.c[0])
         - (new_cp.b[0] - new_cp.c[0]) * (old_cp.a[0] - old_cp.c[0])) as f32
         / delta;
-
+    if !beta_x.is_normal() {
+        return Err(CalibrationError::Beta);
+    }
     let delta_x = ((old_cp.a[0]) * (new_cp.b[0] * new_cp.c[1] - new_cp.c[0] * new_cp.b[1])
         - (old_cp.b[0]) * (new_cp.a[0] * new_cp.c[1] - new_cp.c[0] * new_cp.a[1])
         + (old_cp.c[0]) * (new_cp.a[0] * new_cp.b[1] - new_cp.b[0] * new_cp.a[1]))
         as f32
         / delta;
-
+    if !delta_x.is_normal() {
+        return Err(CalibrationError::Delta);
+    }
     let alpha_y = ((old_cp.a[1] - old_cp.c[1]) * (new_cp.b[1] - new_cp.c[1])
         - (old_cp.b[1] - old_cp.c[1]) * (new_cp.a[1] - new_cp.c[1])) as f32
         / delta;
-
+    if !alpha_y.is_normal() {
+        return Err(CalibrationError::Alpha);
+    }
     let beta_y = ((new_cp.a[0] - new_cp.c[0]) * (old_cp.b[1] - old_cp.c[1])
         - (new_cp.b[0] - new_cp.c[0]) * (old_cp.a[1] - old_cp.c[1])) as f32
         / delta;
-
+    if !beta_y.is_normal() {
+        return Err(CalibrationError::Beta);
+    }
     let delta_y = ((old_cp.a[1]) * (new_cp.b[0] * new_cp.c[1] - new_cp.c[0] * new_cp.b[1])
         - (old_cp.b[1]) * (new_cp.a[0] * new_cp.c[1] - new_cp.c[0] * new_cp.a[1])
         + (old_cp.c[1]) * (new_cp.a[0] * new_cp.b[1] - new_cp.b[0] * new_cp.a[1]))
         as f32
         / delta;
+    if !delta_y.is_normal() {
+        return Err(CalibrationError::Delta);
+    }
 
-    CalibrationData {
+    Ok(CalibrationData {
         alpha_x,
         beta_x,
         delta_x,
         alpha_y,
         beta_y,
         delta_y,
-    }
+    })
 }

@@ -36,7 +36,7 @@ use embedded_hal::{
 };
 
 #[cfg(feature = "with_defmt")]
-use defmt::{write, Format, Formatter};
+use defmt::Format;
 
 pub mod calibration;
 pub mod error;
@@ -48,6 +48,7 @@ const CHANNEL_SETTING_Y: u8 = 0b11010000;
 const MAX_SAMPLES: usize = 128;
 const TX_BUFF_LEN: usize = 5;
 
+#[cfg_attr(feature = "with_defmt", derive(Format))]
 #[derive(Debug)]
 pub struct CalibrationData {
     pub alpha_x: f32,
@@ -388,12 +389,18 @@ where
     /// to work ok but if for some reason touch screen needs to be recalibrated
     /// then look no further.
     /// This should be run after init() method.
-    pub fn calibrate<DT, DELAY>(&mut self, dt: &mut DT, delay: &mut DELAY, exti: &mut PinIRQ::Exti)
+    pub fn calibrate<DT, DELAY>(
+        &mut self,
+        dt: &mut DT,
+        delay: &mut DELAY,
+        exti: &mut PinIRQ::Exti,
+    ) -> Result<(), Error<SPIError>>
     where
         DT: DrawTarget<Color = Rgb565>,
         DELAY: DelayUs,
     {
         let mut calibration_count = 0;
+        let mut retry = 3;
         let mut new_a = Point::zero();
         let mut new_b = Point::zero();
         let mut new_c = Point::zero();
@@ -447,8 +454,25 @@ where
                         c: new_c,
                     };
                     // and then re-caculate calibration
-                    self.calibration_data = calculate_calibration(&old_cp, &self.calibration_point);
-                    calibration_count += 1;
+                    match calculate_calibration(&old_cp, &self.calibration_point) {
+                        Ok(new_calibration_data) => {
+                            self.calibration_data = new_calibration_data;
+                            calibration_count += 1;
+                        }
+                        Err(e) => {
+                            // We have problem calculating new values
+                            if retry == 0 {
+                                return Err(Error::Calibration(e));
+                            }
+                            /*
+                             * If out calculation failed lets retry
+                             */
+                            retry -= 1;
+                            calibration_count = 0;
+
+                            let _ = dt.clear(Rgb565::BLACK);
+                        }
+                    }
                 }
                 _ => {}
             }
@@ -456,5 +480,7 @@ where
 
         let _ = dt.clear(Rgb565::WHITE);
         self.operation_mode = TouchScreenOperationMode::NORMAL;
+
+        Ok(())
     }
 }
