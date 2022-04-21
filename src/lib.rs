@@ -11,7 +11,6 @@
     unused_variables,
     unreachable_code,
     unused_comparisons,
-    unused_imports,
     unused_must_use
 )]
 #![no_std]
@@ -20,23 +19,33 @@
 //! [`embedded-hal`](https://github.com/rust-embedded/embedded-hal) traits.
 //!
 
+use crate::calibration::{calculate_calibration, calibration_draw_point};
 pub use crate::{
+    calibration::CalibrationPoint,
     error::{BusError, Error},
     exti_pin::Xpt2046Exti,
 };
 use core::{fmt::Debug, ops::RemAssign};
-use embedded_graphics_core::geometry::Point;
+use embedded_graphics_core::{
+    draw_target::DrawTarget,
+    geometry::Point,
+    pixelcolor::{Rgb565, RgbColor},
+};
 use embedded_hal::{
     delay::blocking::DelayUs, digital::blocking::OutputPin, spi::blocking::Transfer,
 };
 
+#[cfg(feature = "with_defmt")]
+use defmt::{write, Format, Formatter};
+
+pub mod calibration;
 pub mod error;
 pub mod exti_pin;
 
 const CHANNEL_SETTING_X: u8 = 0b10010000;
 const CHANNEL_SETTING_Y: u8 = 0b11010000;
 
-const MAX_SAMPLES: usize = 32;
+const MAX_SAMPLES: usize = 64;
 const TX_BUFF_LEN: usize = 5;
 
 #[derive(Debug)]
@@ -59,6 +68,21 @@ pub enum Orientation {
 }
 
 impl Orientation {
+    pub fn calibration_point(&self) -> CalibrationPoint {
+        match self {
+            Orientation::Portrait | Orientation::PortraitFlipped => CalibrationPoint {
+                a: Point::new(10, 10),
+                b: Point::new(80, 210),
+                c: Point::new(200, 170),
+            },
+            Orientation::Landscape | Orientation::LandscapeFlipped => CalibrationPoint {
+                a: Point::new(20, 25),
+                b: Point::new(160, 220),
+                c: Point::new(300, 110),
+            },
+        }
+    }
+
     pub fn calibration_data(&self) -> CalibrationData {
         match self {
             Orientation::Portrait => CalibrationData {
@@ -110,11 +134,11 @@ pub enum TouchScreenState {
     RELEASED,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum TouchScreenOperationMode {
     /// Normal touch reading
     NORMAL,
-    /// Manual calibration mode TODO
+    /// Manual calibration mode
     CALIBRATION,
 }
 
@@ -167,6 +191,7 @@ pub struct Xpt2046<SPI, CS, PinIRQ> {
     ts: TouchSamples,
     calibration_data: CalibrationData,
     operation_mode: TouchScreenOperationMode,
+    calibration_point: CalibrationPoint,
 }
 
 impl<SPI, CS, PinIRQ> Xpt2046<SPI, CS, PinIRQ>
@@ -186,6 +211,7 @@ where
             ts: TouchSamples::default(),
             calibration_data: orientation.calibration_data(),
             operation_mode: TouchScreenOperationMode::NORMAL,
+            calibration_point: orientation.calibration_point(),
         }
     }
 }
@@ -280,7 +306,12 @@ where
     /// continually runs and
     pub fn run(&mut self, exti: &mut PinIRQ::Exti) {
         match self.screen_state {
-            TouchScreenState::IDLE => {}
+            TouchScreenState::IDLE => {
+                if self.operation_mode == TouchScreenOperationMode::CALIBRATION && self.irq.is_low()
+                {
+                    self.screen_state = TouchScreenState::PRESAMPLING;
+                }
+            }
             TouchScreenState::PRESAMPLING => {
                 if self.irq.is_high() {
                     self.screen_state = TouchScreenState::RELEASED
@@ -313,6 +344,7 @@ where
                  * The PENIRQ should be re-enabled in here
                  * as we finished sending any data to the touch controller
                  */
+                self.irq.clear_interrupt();
                 self.irq.enable_interrupt(exti);
             }
         }
@@ -329,8 +361,78 @@ where
          * interrupts when the PENIRQ output is disabled in the cases
          * discussed in this section.
          */
-        self.irq.clear_interrupt();
         self.irq.disable_interrupt(exti);
+        self.irq.clear_interrupt();
         self.screen_state = TouchScreenState::PRESAMPLING;
+    }
+
+    pub fn calibrate<DT, DELAY>(&mut self, dt: &mut DT, delay: &mut DELAY, exti: &mut PinIRQ::Exti)
+    where
+        DT: DrawTarget<Color = Rgb565>,
+        DELAY: DelayUs,
+    {
+        let mut calibration_count = 0;
+        let mut new_a = Point::zero();
+        let mut new_b = Point::zero();
+        let mut new_c = Point::zero();
+        let old_cp = self.calibration_point.clone();
+        // Prepare the screen for points
+        let _ = dt.clear(Rgb565::BLACK);
+
+        // Set correct state to fetch raw data from touch controller
+        self.operation_mode = TouchScreenOperationMode::CALIBRATION;
+        while calibration_count < 4 {
+            // We must run our state machine to capture user input
+            self.run(exti);
+            match calibration_count {
+                0 => {
+                    calibration_draw_point(dt, &old_cp.a);
+                    if self.screen_state == TouchScreenState::TOUCHED {
+                        new_a = self.read_touch_point().unwrap();
+                    }
+                    if self.screen_state == TouchScreenState::RELEASED {
+                        let _ = delay.delay_ms(200);
+                        calibration_count += 1;
+                    }
+                }
+
+                1 => {
+                    calibration_draw_point(dt, &old_cp.b);
+                    if self.screen_state == TouchScreenState::TOUCHED {
+                        new_b = self.read_touch_point().unwrap();
+                    }
+                    if self.screen_state == TouchScreenState::RELEASED {
+                        let _ = delay.delay_ms(200);
+                        calibration_count += 1;
+                    }
+                }
+                2 => {
+                    calibration_draw_point(dt, &old_cp.c);
+                    if self.screen_state == TouchScreenState::TOUCHED {
+                        new_c = self.read_touch_point().unwrap();
+                    }
+                    if self.screen_state == TouchScreenState::RELEASED {
+                        let _ = delay.delay_ms(200);
+                        calibration_count += 1;
+                    }
+                }
+
+                3 => {
+                    // Create new calibration point from the captured samples
+                    self.calibration_point = CalibrationPoint {
+                        a: new_a,
+                        b: new_b,
+                        c: new_c,
+                    };
+                    // and then re-caculate calibration
+                    self.calibration_data = calculate_calibration(&old_cp, &self.calibration_point);
+                    calibration_count += 1;
+                }
+                _ => {}
+            }
+        }
+
+        let _ = dt.clear(Rgb565::WHITE);
+        self.operation_mode = TouchScreenOperationMode::NORMAL;
     }
 }
