@@ -281,6 +281,7 @@ where
         Ok(Point::new(x, y))
     }
 
+    /// Get the actual touch point
     pub fn get_touch_point(&self) -> Point {
         self.ts.average()
     }
@@ -296,11 +297,14 @@ where
     }
 
     /// Reset the driver and preload tx buffer with register data.
-    pub fn init<D: DelayUs>(&mut self, delay: &mut D) {
+    pub fn init<D: DelayUs>(
+        &mut self,
+        delay: &mut D,
+    ) -> Result<(), Error<BusError<SPIError, CSError>>> {
         self.tx_buff[0] = 0x80;
-        self.cs.set_high().unwrap();
-        self.spi_read().unwrap();
-        delay.delay_ms(1).unwrap();
+        self.cs.set_high()?;
+        self.spi_read()?;
+        delay.delay_ms(1).map_err(|_| Error::Delay)?;
 
         /*
          * Load the tx_buffer with the channels config
@@ -315,12 +319,16 @@ where
             CHANNEL_SETTING_Y << 5,
             0,
         ];
+        Ok(())
     }
 
     /// Continually runs and and collects the touch data from xpt2046.
     /// You should drive this either in some main loop or dedicated timer
     /// interrupt
-    pub fn run(&mut self, exti: &mut PinIRQ::Exti) {
+    pub fn run(
+        &mut self,
+        exti: &mut PinIRQ::Exti,
+    ) -> Result<(), Error<BusError<SPIError, CSError>>> {
         match self.screen_state {
             TouchScreenState::IDLE => {
                 if self.operation_mode == TouchScreenOperationMode::CALIBRATION && self.irq.is_low()
@@ -332,7 +340,7 @@ where
                 if self.irq.is_high() {
                     self.screen_state = TouchScreenState::RELEASED
                 }
-                let point_sample = self.read_touch_point().unwrap();
+                let point_sample = self.read_touch_point()?;
                 self.ts.samples[self.ts.counter] = point_sample;
                 self.ts.counter += 1;
                 if self.ts.counter + 1 == MAX_SAMPLES {
@@ -341,7 +349,7 @@ where
                 }
             }
             TouchScreenState::TOUCHED => {
-                let point_sample = self.read_touch_point().unwrap();
+                let point_sample = self.read_touch_point()?;
                 self.ts.samples[self.ts.counter] = point_sample;
                 self.ts.counter += 1;
                 /*
@@ -364,6 +372,7 @@ where
                 self.irq.enable_interrupt(exti);
             }
         }
+        Ok(())
     }
 
     /// This function should be only ever be called in an EXTI
@@ -394,7 +403,7 @@ where
         dt: &mut DT,
         delay: &mut DELAY,
         exti: &mut PinIRQ::Exti,
-    ) -> Result<(), Error<SPIError>>
+    ) -> Result<(), Error<BusError<SPIError, CSError>>>
     where
         DT: DrawTarget<Color = Rgb565>,
         DELAY: DelayUs,
@@ -412,7 +421,7 @@ where
         self.operation_mode = TouchScreenOperationMode::CALIBRATION;
         while calibration_count < 4 {
             // We must run our state machine to capture user input
-            self.run(exti);
+            self.run(exti)?;
             match calibration_count {
                 0 => {
                     calibration_draw_point(dt, &old_cp.a);

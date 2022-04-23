@@ -24,6 +24,14 @@ pub enum Error<E> {
     Bus(E),
     /// Error when calculating new calibration values
     Calibration(CalibrationError),
+    /// Delay error
+    Delay,
+}
+
+impl<SPIError, CSError> From<CSError> for Error<BusError<SPIError, CSError>> {
+    fn from(e: CSError) -> Self {
+        Self::Bus(BusError::Pin(e))
+    }
 }
 
 #[cfg(feature = "with_defmt")]
@@ -32,6 +40,7 @@ impl<E> Format for Error<E> {
         match self {
             Error::Bus(_) => write!(fmt, "Bus error"),
             Error::Calibration(e) => write!(fmt, "Error when calculating calibration for: {}", e),
+            Error::Delay => write!(fmt, "Delay error"),
         }
     }
 }
