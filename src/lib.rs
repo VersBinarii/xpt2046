@@ -32,7 +32,7 @@ use embedded_graphics_core::{
     pixelcolor::{Rgb565, RgbColor},
 };
 use embedded_hal::{
-    delay::blocking::DelayUs, digital::blocking::OutputPin, spi::blocking::Transfer,
+    delay::DelayUs, digital::OutputPin,spi::SpiDevice
 };
 
 #[cfg(feature = "with_defmt")]
@@ -206,7 +206,7 @@ pub struct Xpt2046<SPI, CS, PinIRQ> {
 
 impl<SPI, CS, PinIRQ> Xpt2046<SPI, CS, PinIRQ>
 where
-    SPI: Transfer<u8>,
+    SPI: SpiDevice<u8>,
     CS: OutputPin,
     PinIRQ: Xpt2046Exti,
 {
@@ -228,7 +228,7 @@ where
 
 impl<SPI, CS, PinIRQ, SPIError, CSError> Xpt2046<SPI, CS, PinIRQ>
 where
-    SPI: Transfer<u8, Error = SPIError>,
+    SPI: SpiDevice<u8, Error = SPIError>,
     CS: OutputPin<Error = CSError>,
     PinIRQ: Xpt2046Exti,
     SPIError: Debug,
@@ -304,7 +304,7 @@ where
         self.tx_buff[0] = 0x80;
         self.cs.set_high()?;
         self.spi_read()?;
-        delay.delay_ms(1).map_err(|_| Error::Delay)?;
+        delay.delay_ms(1);
 
         /*
          * Load the tx_buffer with the channels config
